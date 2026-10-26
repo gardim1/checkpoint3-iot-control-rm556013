@@ -1,4 +1,4 @@
-import { connect, type MqttClient } from 'mqtt';
+import mqtt, { type MqttClient } from 'mqtt';
 
 import {
   DEFAULT_BROKER_URL,
@@ -42,7 +42,7 @@ class MqttService {
     this.setStatus({ status: 'conectando' });
 
     try {
-      const client = connect(url, {
+      const client = mqtt.connect(url, {
         clientId: `iotcontrol-app-rm556013-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
         reconnectPeriod: 0,
         connectTimeout: 10000,
