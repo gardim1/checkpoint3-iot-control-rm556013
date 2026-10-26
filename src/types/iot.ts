@@ -8,6 +8,8 @@ export type SensorReading = { value: number; timestamp: number };
 
 export type LampReading = { value: LampState; timestamp: number };
 
+export type PendingCommand = { action: LampState; confirmed: boolean; acknowledged: boolean };
+
 export type HistoryEntry = {
   id: string;
   topic: string;

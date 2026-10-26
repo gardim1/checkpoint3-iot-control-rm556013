@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { colors, type AppColors } from '../themes/colors';
-import type { HistoryEntry, LampReading, Preferences, SensorReading, ThemeName } from '../types/iot';
+import type { HistoryEntry, LampReading, PendingCommand, Preferences, SensorReading, ThemeName } from '../types/iot';
 import { MQTT_TOPICS, type LampState, type MqttConnectionState } from '../types/mqtt';
 import { validateBrokerUrl } from './brokerUrl';
-import { appendHistory, parseMessage } from './iotState';
+import { appendHistory, observeCommandState, parseMessage } from './iotState';
 import { mqttService } from './mqttService';
 import { storageService } from './storageService';
 
@@ -51,9 +51,7 @@ export function IoTProvider({ children }: { children: ReactNode }) {
   const savingRef = useRef(false);
   const publishingRef = useRef(false);
   const historyId = useRef(0);
-  const lampRef = useRef<LampReading | null>(null);
-  const lampRevision = useRef(0);
-  const pendingAction = useRef<LampState | null>(null);
+  const pendingAction = useRef<PendingCommand | null>(null);
 
   const addHistory = useCallback((entry: Omit<HistoryEntry, 'id'>) => {
     const item = { ...entry, id: String(++historyId.current) };
@@ -82,6 +80,7 @@ export function IoTProvider({ children }: { children: ReactNode }) {
       connectionRef.current = state;
       setConnection(state);
       if (state.status !== 'conectado') {
+        if (pendingAction.current) setFeedback(null);
         pendingAction.current = null;
         setAwaitingConfirmation(false);
       }
@@ -98,13 +97,12 @@ export function IoTProvider({ children }: { children: ReactNode }) {
       else if (parsed.kind === 'humidity') setHumidity({ value: parsed.value, timestamp });
       else {
         const reading = { value: parsed.value, timestamp };
-        lampRef.current = reading;
-        lampRevision.current++;
         setLamp(reading);
-        if (pendingAction.current === parsed.value) {
-          pendingAction.current = null;
+        const command = pendingAction.current;
+        if (observeCommandState(command, parsed.value)) {
+          if (command?.acknowledged) pendingAction.current = null;
           setAwaitingConfirmation(false);
-          setFeedback(`Estado confirmado pelo dispositivo: lâmpada ${parsed.value === 'ON' ? 'ligada' : 'desligada'}.`);
+          setFeedback('Comando confirmado pelo dispositivo.');
         }
       }
     });
@@ -135,17 +133,18 @@ export function IoTProvider({ children }: { children: ReactNode }) {
     publishingRef.current = true;
     setPublishing(true);
     setFeedback(null);
-    const revision = lampRevision.current;
-    pendingAction.current = action;
+    const command: PendingCommand = { action, confirmed: false, acknowledged: false };
+    pendingAction.current = command;
     try {
       await mqttService.publish(action);
       if (!mounted.current) return;
       addHistory({ topic: MQTT_TOPICS.lampCommand, payload: JSON.stringify({ action }), timestamp: Date.now(), direction: 'enviada' });
-      const confirmed = lampRevision.current > revision && lampRef.current?.value === action;
-      setAwaitingConfirmation(!confirmed);
-      if (confirmed) {
+      command.acknowledged = true;
+      if (pendingAction.current !== command) return;
+      setAwaitingConfirmation(!command.confirmed);
+      if (command.confirmed) {
         pendingAction.current = null;
-        setFeedback(`Estado confirmado pelo dispositivo: lâmpada ${action === 'ON' ? 'ligada' : 'desligada'}.`);
+        setFeedback('Comando confirmado pelo dispositivo.');
       } else {
         setFeedback('Comando enviado, aguardando confirmação do dispositivo');
       }
@@ -175,7 +174,7 @@ export function IoTProvider({ children }: { children: ReactNode }) {
       setPreferences(next);
       mqttService.disconnect();
       if (reconnect) mqttService.connect(validUrl);
-      setFeedback(reconnect ? 'URL salva. Conectando ao broker…' : 'URL salva. Toque em Conectar para iniciar.');
+      setFeedback(reconnect ? 'URL salva e aplicada.' : 'URL salva. Toque em Conectar para iniciar.');
     } catch (error) {
       if (mounted.current) setFeedback(error instanceof Error && error.message.startsWith('URL inválida') ? error.message : 'Não foi possível salvar a URL. Tente novamente.');
     } finally {

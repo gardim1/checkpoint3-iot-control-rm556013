@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { Duplex } from 'node:stream';
 import test from 'node:test';
-import type { IClientOptions, ISubscriptionGrant, MqttClient } from 'mqtt';
+import mqtt, { type IClientOptions, type ISubscriptionGrant, type MqttClient } from 'mqtt';
 
 import { MqttService } from '../src/services/mqttService';
 import type { MqttConnectionState } from '../src/types/mqtt';
@@ -31,7 +32,7 @@ class Transport extends EventEmitter {
     this.publishCallback = callback;
   }
 
-  end() { this.ended++; this.connected = false; }
+  end(_force?: boolean, callback?: () => void) { this.ended++; this.connected = false; callback?.(); }
 
   open() { this.connected = true; this.emit('connect'); }
 }
@@ -159,4 +160,19 @@ test('substituir conexão rejeita publicação pendente e ignora PUBACK antigo',
   await publication;
   assert.equal(result, 'erro');
   service.disconnect();
+});
+
+test('desconectar antes do CONNACK preserva limpeza interna do MQTT.js real', async () => {
+  let client: MqttClient | null = null;
+  const service = new MqttService((_url, options) => {
+    client = new mqtt.MqttClient(() => new Duplex({ read() {}, write(_chunk, _encoding, callback) { callback(); } }), { ...options, connectTimeout: 20 });
+    return client;
+  });
+  const states: MqttConnectionState[] = [];
+  service.onStatus((state) => states.push(state));
+  service.connect();
+  service.disconnect();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(states.at(-1)?.status, 'desconectado');
+  assert.equal((client as MqttClient | null)?.eventNames().length, 0);
 });

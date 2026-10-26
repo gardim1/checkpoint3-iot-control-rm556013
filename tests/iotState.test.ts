@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { appendHistory, parseMessage } from '../src/services/iotState';
+import { appendHistory, observeCommandState, parseMessage } from '../src/services/iotState';
+import type { PendingCommand } from '../src/types/iot';
 import { MQTT_TOPICS } from '../src/types/mqtt';
 
 test('sensores exigem value numérico e finito', () => {
@@ -28,4 +29,16 @@ test('histórico mantém dez mensagens totais em ordem mais recente primeiro', (
   assert.deepEqual(history.map((entry) => entry.id), ['11', '10', '9', '8', '7', '6', '5', '4', '3', '2']);
   assert.equal(history[0].direction, 'enviada');
   assert.equal(history[1].direction, 'recebida');
+});
+
+test('confirmação antes do PUBACK não é perdida por estado oposto posterior', () => {
+  const command: PendingCommand = { action: 'ON', confirmed: false, acknowledged: false };
+  assert.equal(observeCommandState(command, 'OFF'), false);
+  assert.equal(command.confirmed, false);
+  assert.equal(observeCommandState(command, 'ON'), true);
+  assert.equal(command.confirmed, true);
+  assert.equal(observeCommandState(command, 'OFF'), false);
+  command.acknowledged = true;
+  assert.equal(command.confirmed, true);
+  assert.equal(observeCommandState(null, 'ON'), false);
 });

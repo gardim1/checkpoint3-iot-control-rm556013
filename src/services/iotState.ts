@@ -1,5 +1,11 @@
-import type { HistoryEntry, ParsedMessage } from '../types/iot';
-import { MQTT_TOPICS, type MqttMessage } from '../types/mqtt';
+import type { HistoryEntry, ParsedMessage, PendingCommand } from '../types/iot';
+import { MQTT_TOPICS, type LampState, type MqttMessage } from '../types/mqtt';
+
+export function observeCommandState(command: PendingCommand | null, state: LampState): boolean {
+  if (!command || command.action !== state) return false;
+  command.confirmed = true;
+  return true;
+}
 
 export function parseMessage(message: MqttMessage): ParsedMessage | null {
   try {

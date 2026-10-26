@@ -56,8 +56,11 @@ export class MqttService {
     try {
       if (client.connected) client.unsubscribe(subscriptionTopics);
     } catch {}
-    client.removeAllListeners();
-    try { client.end(true); } catch {}
+    try {
+      client.end(true, () => { client.removeAllListeners(); });
+    } catch {
+      client.removeAllListeners();
+    }
   }
 
   private fail(message: string): void {
