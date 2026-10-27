@@ -88,10 +88,14 @@ function shutdown(signal) {
   stopping = true;
   clearInterval(interval);
   log(`Encerrando simulador (${signal})`);
-  const timeout = setTimeout(() => client.end(true), 3000);
-  client.end(false, () => {
+  const timeout = setTimeout(() => {
+    log('Tempo limite ao encerrar; finalizando processo');
+    process.exit(1);
+  }, 3000).unref();
+  client.end(true, () => {
     clearTimeout(timeout);
     log('Cliente MQTT encerrado');
+    process.exit(0);
   });
 }
 
